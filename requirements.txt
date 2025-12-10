@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+torch==2.0.1
+ultralytics
+numpy
+opencv-python-headless
+Pillow
+albumentations
+segmentation-models-pytorch
