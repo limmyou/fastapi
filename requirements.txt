@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 ultralytics
-numpy==1.24.4
+numpy==1.21.4
+scipy==1.7.3
 opencv-python-headless
 Pillow
 albumentations
