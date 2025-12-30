@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 ultralytics
-numpy==1.21.0 
+numpy==1.21.2  # 버전 수정
 opencv-python-headless==4.5.5.64
 Pillow
 albumentations
