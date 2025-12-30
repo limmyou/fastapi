@@ -1,8 +1,8 @@
 fastapi
 uvicorn
 ultralytics
-numpy==1.21.0
-opencv-python-headless
+numpy==1.21.0 
+opencv-python-headless==4.5.5.64
 Pillow
 albumentations
 segmentation-models-pytorch
@@ -10,3 +10,4 @@ python-multipart
 torch==2.0.1+cpu
 torchvision==0.15.2+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
+scipy==1.7.3
