@@ -1,6 +1,6 @@
 fastapi
 uvicorn
-ultralytics
+ultralytics==8.3.243  # 최신 버전으로 수정
 numpy==1.22.3  # 버전 수정
 opencv-python-headless==4.5.5.64
 Pillow
