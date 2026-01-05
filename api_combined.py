@@ -98,12 +98,29 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        image_bytes = await file.read()
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image = np.array(image)
+        # image_bytes = await file.read()
+        # image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # image = np.array(image)
 
+        # start_time = time.time()
+        # results = yolo_model(image)  # ← Ultralytics YOLO inference
+        image_bytes = await file.read()
+
+        npimg = np.frombuffer(image_bytes, np.uint8)
+        image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise ValueError("이미지 디코딩 실패")
+        
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        
         start_time = time.time()
-        results = yolo_model(image)  # ← Ultralytics YOLO inference
+        results = yolo_model.predict(
+            source=image,
+            conf=0.3,
+            verbose=False
+        )
+                
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
