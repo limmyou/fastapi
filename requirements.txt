@@ -3,7 +3,7 @@ uvicorn
 
 ultralytics==8.3.248
 
-numpy==1.22.3
+numpy>=1.23.0,<1.26.0
 opencv-python-headless==4.7.0.72
 Pillow
 albumentations
@@ -14,4 +14,4 @@ torch==2.0.1+cpu
 torchvision==0.15.2+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-scipy==1.8.0
+scipy>=1.9.0,<1.11.0
