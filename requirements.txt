@@ -1,8 +1,9 @@
 fastapi
 uvicorn
-ultralytics==8.3.243  # 최신 버전으로 수정
-numpy==1.22.3  # 버전 수정
-opencv-python-headless==4.5.5.64
+ultralytics==8.0.196
+numpy==1.23.5
+scipy==1.9.3
+opencv-python-headless==4.8.0.76
 Pillow
 albumentations
 segmentation-models-pytorch
@@ -10,4 +11,3 @@ python-multipart
 torch==2.0.1+cpu
 torchvision==0.15.2+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
-scipy==1.8.0  # 버전 수정
