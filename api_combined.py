@@ -101,11 +101,11 @@ async def detect_objects(file: UploadFile = File(...)):
         image_bytes = await file.read()
 
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image = np.array(image)  # ✅ 중요
+        image = np.array(image, dtype=np.uint8)  # ⭐ 중요
 
         start_time = time.time()
         results = yolo_model.predict(
-            source=image,
+            source=[image],        # ⭐⭐⭐ 핵심
             imgsz=640,
             conf=0.3,
             stream=False,
@@ -141,6 +141,7 @@ async def detect_objects(file: UploadFile = File(...)):
 
     finally:
         is_busy = False
+
 
 # =========================================================
 # DeepLab /segment endpoint
