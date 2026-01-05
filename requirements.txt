@@ -1,12 +1,11 @@
 fastapi
 uvicorn
 
-ultralytics==8.3.248   # ← Colab과 반드시 동일
+ultralytics==8.3.248
 
-numpy>=1.23,<2.0       # ← YOLO + opencv + torch 안전 범위
-opencv-python-headless # ← 버전 고정 제거 (중요)
+numpy>=1.23.0,<1.26.0
+opencv-python-headless==4.7.0.72
 Pillow
-
 albumentations
 segmentation-models-pytorch
 python-multipart
@@ -14,3 +13,5 @@ python-multipart
 torch==2.0.1+cpu
 torchvision==0.15.2+cpu
 --extra-index-url https://download.pytorch.org/whl/cpu
+
+scipy>=1.9.0,<1.11.0
