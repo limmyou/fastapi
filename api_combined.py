@@ -100,6 +100,7 @@ async def detect_objects(file: UploadFile = File(...)):
 
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = np.array(image)
 
         start_time = time.time()
         results = yolo_model(image)  # ← Ultralytics YOLO inference
