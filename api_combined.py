@@ -98,7 +98,6 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        # ✅ 딱 한 번만 읽는다
         image_bytes = await file.read()
 
         npimg = np.frombuffer(image_bytes, np.uint8)
@@ -115,32 +114,24 @@ async def detect_objects(file: UploadFile = File(...)):
             conf=0.3,
             verbose=False
         )
-        inference_time = round((time.time() - start_time) * 1000, 2)
 
-        # ✅ results 비어있는 경우 방어
-        if not results or results[0].boxes is None:
-            return {
-                "model": "YOLO",
-                "filename": file.filename,
-                "object_count": 0,
-                "inference_time_ms": inference_time,
-                "predictions": []
-            }
+        inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
-        for box in results[0].boxes:
-            cls_id = int(box.cls[0])
-            conf = float(box.conf[0])
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
+        if results and results[0].boxes is not None:
+            for box in results[0].boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-            object_count += 1
-            predictions.append({
-                "class_id": cls_id,
-                "confidence": round(conf * 100, 2),
-                "box": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
-            })
+                object_count += 1
+                predictions.append({
+                    "class_id": cls_id,
+                    "confidence": round(conf * 100, 2),
+                    "box": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
+                })
 
         return {
             "model": "YOLO",
