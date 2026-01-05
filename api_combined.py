@@ -98,55 +98,49 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        # image_bytes = await file.read()
-        # image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        # image = np.array(image)
-
-        # start_time = time.time()
-        # results = yolo_model(image)  # ← Ultralytics YOLO inference
+        # 🔹 file.read()는 단 한 번
         image_bytes = await file.read()
 
+        # 🔹 OpenCV 디코딩
         npimg = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-        
+
         if image is None:
             raise ValueError("이미지 디코딩 실패")
-        
+
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        
+
+        # 🔹 YOLO 추론
         start_time = time.time()
         results = yolo_model.predict(
             source=image,
             conf=0.3,
             verbose=False
         )
-                
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
-        # results[0].boxes 사용
         for box in results[0].boxes:
             cls_id = int(box.cls[0])
             conf = float(box.conf[0])
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-            if conf >= 0.3:
-                object_count += 1
-                predictions.append({
-                    "class_id": cls_id,
-                    "confidence": round(conf * 100, 2),
-                    "box": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
-                })
+            object_count += 1
+            predictions.append({
+                "class_id": cls_id,
+                "confidence": round(conf * 100, 2),
+                "box": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
+            })
 
-        return JSONResponse(content={
+        return {
             "model": "YOLO",
             "filename": file.filename,
             "object_count": object_count,
             "inference_time_ms": inference_time,
             "predictions": predictions
-        })
+        }
 
     except Exception as e:
         traceback.print_exc()
