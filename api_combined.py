@@ -104,11 +104,7 @@ async def detect_objects(file: UploadFile = File(...)):
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         start_time = time.time()
-        results = yolo_model.predict(
-            source=image,
-            conf=0.3,
-            verbose=False
-        )
+        results = yolo_model(image)
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
