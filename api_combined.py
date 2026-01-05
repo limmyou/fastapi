@@ -100,32 +100,36 @@ async def detect_objects(file: UploadFile = File(...)):
 
         image_bytes = await file.read()
 
-        # ✅ PIL로만 처리 (OpenCV 제거)
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = np.array(image)  # ✅ 중요
 
         start_time = time.time()
-        results = yolo_model(image)
+        results = yolo_model.predict(
+            source=image,
+            imgsz=640,
+            conf=0.3,
+            stream=False,
+            verbose=False
+        )
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
-        if results and results[0].boxes is not None:
-            for box in results[0].boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
+        for box in results[0].boxes:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
 
+            if conf >= 0.3:
                 object_count += 1
                 predictions.append({
                     "class_id": cls_id,
                     "confidence": round(conf * 100, 2),
-                    "box": [round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)]
+                    "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
                 })
 
         return {
-            "model": "YOLO",
-            "filename": file.filename,
             "object_count": object_count,
             "inference_time_ms": inference_time,
             "predictions": predictions
