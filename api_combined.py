@@ -98,10 +98,9 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        # 🔹 file.read()는 단 한 번
+        # ✅ 딱 한 번만 읽는다
         image_bytes = await file.read()
 
-        # 🔹 OpenCV 디코딩
         npimg = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
@@ -110,7 +109,6 @@ async def detect_objects(file: UploadFile = File(...)):
 
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # 🔹 YOLO 추론
         start_time = time.time()
         results = yolo_model.predict(
             source=image,
@@ -118,6 +116,16 @@ async def detect_objects(file: UploadFile = File(...)):
             verbose=False
         )
         inference_time = round((time.time() - start_time) * 1000, 2)
+
+        # ✅ results 비어있는 경우 방어
+        if not results or results[0].boxes is None:
+            return {
+                "model": "YOLO",
+                "filename": file.filename,
+                "object_count": 0,
+                "inference_time_ms": inference_time,
+                "predictions": []
+            }
 
         predictions = []
         object_count = 0
