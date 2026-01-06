@@ -75,43 +75,60 @@ def calculate_area(pred_mask, orig_shape):
 # =========================================================
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
+    global is_busy
     try:
-        yolo = get_yolo()
+        is_busy = True
 
-        # 1️⃣ 파일 읽기
+        # 1️⃣ 파일은 한 번만 읽기
         image_bytes = await file.read()
 
-        # 2️⃣ PIL → numpy (RGB, uint8)
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image_np = np.array(image, dtype=np.uint8)
+        # 2️⃣ OpenCV로 디코딩 (YOLO는 이게 제일 안전)
+        npimg = np.frombuffer(image_bytes, np.uint8)
+        image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-        # 3️⃣ YOLO predict (이 방식만!)
-        start = time.time()
-        results = yolo.predict(
-            source=image_np,
-            imgsz=640,
-            conf=0.3,
-            verbose=False
-        )
-        infer_ms = round((time.time() - start) * 1000, 2)
+        if image is None:
+            raise ValueError("이미지 디코딩 실패")
+
+        # 3️⃣ BGR → RGB
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+        # 4️⃣ YOLO 모델 가져오기 (lazy load)
+        yolo = get_yolo()
+
+        start_time = time.time()
+
+        # 5️⃣ YOLO 추론 (이 형태만 사용)
+        results = yolo(image, conf=0.3, imgsz=640)
+
+        inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
+        object_count = 0
+
         for box in results[0].boxes:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+
+            object_count += 1
             predictions.append({
-                "class_id": int(box.cls[0]),
-                "confidence": round(float(box.conf[0]) * 100, 2),
-                "box": [round(v, 2) for v in box.xyxy[0].tolist()]
+                "class_id": cls_id,
+                "confidence": round(conf * 100, 2),
+                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
             })
 
         return {
-            "object_count": len(predictions),
-            "inference_time_ms": infer_ms,
+            "object_count": object_count,
+            "inference_time_ms": inference_time,
             "predictions": predictions
         }
 
     except Exception as e:
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+    finally:
+        is_busy = False
 
 # =========================================================
 # DeepLab /segment (기존 유지)
