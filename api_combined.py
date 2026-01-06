@@ -98,36 +98,34 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
+        # 1️⃣ 파일은 한 번만 읽기
         image_bytes = await file.read()
 
+        # 2️⃣ PIL Image만 사용 (numpy / cv2 절대 사용 X)
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image = np.array(image, dtype=np.uint8)  # ⭐ 중요
 
+        # 3️⃣ YOLO 추론 (이 한 줄만!)
         start_time = time.time()
-        results = yolo_model.predict(
-            source=[image],        # ⭐⭐⭐ 핵심
-            imgsz=640,
-            conf=0.3,
-            stream=False,
-            verbose=False
-        )
+        results = yolo_model(image)
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
         for box in results[0].boxes:
-            cls_id = int(box.cls[0])
             conf = float(box.conf[0])
+            if conf < 0.3:
+                continue
+
+            cls_id = int(box.cls[0])
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-            if conf >= 0.3:
-                object_count += 1
-                predictions.append({
-                    "class_id": cls_id,
-                    "confidence": round(conf * 100, 2),
-                    "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
-                })
+            object_count += 1
+            predictions.append({
+                "class_id": cls_id,
+                "confidence": round(conf * 100, 2),
+                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
+            })
 
         return {
             "object_count": object_count,
