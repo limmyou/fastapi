@@ -10,6 +10,8 @@ import segmentation_models_pytorch as smp
 import io
 import time
 import traceback
+from PIL import Image
+
 
 app = FastAPI(title="YOLO + DeepLabV3+ Unified API")
 
