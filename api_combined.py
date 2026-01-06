@@ -98,35 +98,29 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        # 1️⃣ 파일 읽기 (딱 한 번)
         image_bytes = await file.read()
 
-        # 2️⃣ PIL → RGB
+        # ⭐ PIL만 사용 (numpy 변환 ❌)
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 3️⃣ numpy (HWC, uint8)
-        image = np.array(image, dtype=np.uint8)
-
-        # 4️⃣ YOLO 추론 (가장 안전한 방식)
         start_time = time.time()
-        results = yolo_model.predict(
-            source=image,   # ❗ 리스트 아님
-            imgsz=640,
+
+        # ⭐⭐⭐ 가장 안정적인 호출 방식
+        results = yolo_model(
+            image,
             conf=0.3,
-            stream=False,
+            imgsz=640,
             verbose=False
         )
+
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
         for box in results[0].boxes:
-            conf = float(box.conf[0])
-            if conf < 0.3:
-                continue
-
             cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
             object_count += 1
