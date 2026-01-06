@@ -100,16 +100,17 @@ async def detect_objects(file: UploadFile = File(...)):
 
         image_bytes = await file.read()
 
-        # ⭐ PIL만 사용 (numpy 변환 ❌)
+        # ✅ PIL → numpy uint8 (이게 핵심)
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = np.array(image, dtype=np.uint8)
 
         start_time = time.time()
 
-        # ⭐⭐⭐ 가장 안정적인 호출 방식
-        results = yolo_model(
+        # ✅ 이 한 줄만 사용
+        results = yolo_model.predict(
             image,
-            conf=0.3,
             imgsz=640,
+            conf=0.3,
             verbose=False
         )
 
