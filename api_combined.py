@@ -98,15 +98,24 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        # 1️⃣ 파일은 한 번만 읽기
+        # 1️⃣ 파일 읽기 (딱 한 번)
         image_bytes = await file.read()
 
-        # 2️⃣ PIL Image만 사용 (numpy / cv2 절대 사용 X)
+        # 2️⃣ PIL → RGB
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        # 3️⃣ YOLO 추론 (이 한 줄만!)
+        # 3️⃣ numpy (HWC, uint8)
+        image = np.array(image, dtype=np.uint8)
+
+        # 4️⃣ YOLO 추론 (가장 안전한 방식)
         start_time = time.time()
-        results = yolo_model(image)
+        results = yolo_model.predict(
+            source=image,   # ❗ 리스트 아님
+            imgsz=640,
+            conf=0.3,
+            stream=False,
+            verbose=False
+        )
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
@@ -139,7 +148,6 @@ async def detect_objects(file: UploadFile = File(...)):
 
     finally:
         is_busy = False
-
 
 # =========================================================
 # DeepLab /segment endpoint
