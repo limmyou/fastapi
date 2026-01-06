@@ -84,32 +84,20 @@ def status():
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
     try:
-        # 1️⃣ 파일 읽기
         image_bytes = await file.read()
         print("DEBUG file size:", len(image_bytes))
 
         if not image_bytes:
             return JSONResponse(
                 status_code=400,
-                content={"error": "빈 파일이 전송되었습니다"}
+                content={"error": "빈 파일"}
             )
 
-        # 2️⃣ OpenCV 디코딩 (YOLO 최적)
-        npimg = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-
-        if image is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "이미지 디코딩 실패"}
-            )
-
-        # 3️⃣ BGR → RGB
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # ✅ PIL ONLY (OpenCV 완전 제거)
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         start_time = time.time()
 
-        # 4️⃣ YOLO 추론 (이 방식만 사용)
         results = yolo_model.predict(
             source=image,
             imgsz=640,
