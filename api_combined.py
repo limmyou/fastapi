@@ -98,19 +98,19 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
+        # 1️⃣ 파일은 딱 한 번만 읽기
         image_bytes = await file.read()
 
-        # ✅ PIL → numpy uint8 (이게 핵심)
+        # 2️⃣ PIL로만 열기 (OpenCV ❌)
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        image = np.array(image, dtype=np.uint8)
 
         start_time = time.time()
 
-        # ✅ 이 한 줄만 사용
-        results = yolo_model.predict(
+        # 3️⃣ YOLO 호출은 이것만 사용
+        results = yolo_model(
             image,
-            imgsz=640,
             conf=0.3,
+            imgsz=640,
             verbose=False
         )
 
@@ -124,12 +124,13 @@ async def detect_objects(file: UploadFile = File(...)):
             conf = float(box.conf[0])
             x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-            object_count += 1
-            predictions.append({
-                "class_id": cls_id,
-                "confidence": round(conf * 100, 2),
-                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
-            })
+            if conf >= 0.3:
+                object_count += 1
+                predictions.append({
+                    "class_id": cls_id,
+                    "confidence": round(conf * 100, 2),
+                    "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
+                })
 
         return {
             "object_count": object_count,
