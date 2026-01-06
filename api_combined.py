@@ -74,16 +74,15 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
 
-        # ✅ OpenCV로만 처리 (YOLO 최적)
-        npimg = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+        if not image_bytes:
+            raise ValueError("빈 파일 업로드됨")
 
-        if image is None:
-            raise ValueError("이미지 디코딩 실패")
+        # ✅ PIL로 안전하게 디코딩
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image = np.array(image)
 
         start = time.time()
 
-        # ✅ YOLO predict만 사용
         results = yolo_model.predict(
             source=image,
             imgsz=640,
