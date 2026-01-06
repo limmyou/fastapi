@@ -11,22 +11,23 @@ import segmentation_models_pytorch as smp
 import io, time, traceback
 
 # =========================================================
-# FastAPI 초기화
+# FastAPI
 # =========================================================
 app = FastAPI(title="YOLO + DeepLabV3+ Unified API")
 
 # =========================================================
-# YOLO (lazy load 방식)
+# YOLO (lazy load, 단일 방식)
 # =========================================================
 YOLO_MODEL_PATH = "best2.pt"
-yolo_model = None 
+_yolo = None
 
 def get_yolo():
-    global yolo_model
-    if yolo_model is None:
-        print("YOLO model loading")
-        yolo_model = YOLO(YOLO_MODEL_PATH)
-    return yolo_model
+    global _yolo
+    if _yolo is None:
+        print("🚀 YOLO model loading...")
+        _yolo = YOLO(YOLO_MODEL_PATH)
+        _yolo.fuse()
+    return _yolo
 
 is_busy = False
 
@@ -35,7 +36,7 @@ def status():
     return {"status": "busy" if is_busy else "idle"}
 
 # =========================================================
-# DeepLabV3+ 모델 로드 (이건 OK)
+# DeepLabV3+
 # =========================================================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DLAB_MODEL_PATH = "best_dlab30.pth"
@@ -55,9 +56,9 @@ def load_dlab_model():
 dlab_model = load_dlab_model()
 print("✅ DeepLabV3+ model loaded")
 
-# ---------------------------------------------------------
-# 전처리 (DeepLab)
-# ---------------------------------------------------------
+# =========================================================
+# DeepLab 전처리
+# =========================================================
 val_tf = A.Compose([
     A.Resize(512, 512),
     A.Normalize(mean=(0.485, 0.456, 0.406),
@@ -72,23 +73,19 @@ def preprocess(image):
 def predict_mask(image_tensor):
     with torch.no_grad():
         pred = dlab_model(image_tensor)
-        pred_mask = torch.sigmoid(pred).squeeze().cpu().numpy()
-        return (pred_mask > 0.38).astype(np.uint8)
+        mask = torch.sigmoid(pred).squeeze().cpu().numpy()
+        return (mask > 0.38).astype(np.uint8)
 
-def calculate_area(pred_mask, orig_shape):
-    orig_h, orig_w = orig_shape
-    pred_mask_resized = cv2.resize(
-        pred_mask, (orig_w, orig_h),
-        interpolation=cv2.INTER_NEAREST
-    )
-    area_pixels = np.sum(pred_mask_resized)
-    total_pixels = orig_h * orig_w
-    area_ratio = (area_pixels / total_pixels) * 100
-    area_cm2 = area_pixels * 0.0001
-    return area_pixels, area_ratio, area_cm2
+def calculate_area(mask, orig_shape):
+    h, w = orig_shape
+    mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+    pixels = int(mask.sum())
+    ratio = pixels / (h * w) * 100
+    area_cm2 = pixels * 0.0001
+    return pixels, ratio, area_cm2
 
 # =========================================================
-# YOLO /detect endpoint
+# YOLO /detect  ✅ (최종 안정)
 # =========================================================
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
@@ -96,43 +93,30 @@ async def detect_objects(file: UploadFile = File(...)):
     try:
         is_busy = True
 
-        # 1️⃣ 파일은 한 번만 읽기
+        # 1️⃣ 파일 1회 읽기
         image_bytes = await file.read()
 
-        # 2️⃣ PIL로만 열기 (numpy / cv2 ❌)
+        # 2️⃣ PIL Image ONLY
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        start_time = time.time()
+        yolo = get_yolo()
 
-        # 3️⃣ YOLO 호출 (이 방식만 허용)
-        results = yolo_model(
-            image,
-            conf=0.3,
-            imgsz=640,
-            verbose=False
-        )
+        start = time.time()
+        results = yolo(image, conf=0.3, imgsz=640, verbose=False)
+        infer_ms = round((time.time() - start) * 1000, 2)
 
-        inference_time = round((time.time() - start_time) * 1000, 2)
-
-        predictions = []
-        object_count = 0
-
+        preds = []
         for box in results[0].boxes:
-            cls_id = int(box.cls[0])
-            conf = float(box.conf[0])
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-            object_count += 1
-            predictions.append({
-                "class_id": cls_id,
-                "confidence": round(conf * 100, 2),
-                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
+            preds.append({
+                "class_id": int(box.cls[0]),
+                "confidence": round(float(box.conf[0]) * 100, 2),
+                "box": [round(x, 2) for x in box.xyxy[0].tolist()]
             })
 
         return {
-            "object_count": object_count,
-            "inference_time_ms": inference_time,
-            "predictions": predictions
+            "object_count": len(preds),
+            "inference_time_ms": infer_ms,
+            "predictions": preds
         }
 
     except Exception as e:
@@ -143,31 +127,30 @@ async def detect_objects(file: UploadFile = File(...)):
         is_busy = False
 
 # =========================================================
-# DeepLab /segment endpoint (그대로 OK)
+# DeepLab /segment (이건 그대로 OK)
 # =========================================================
 @app.post("/segment")
 async def segment_area(file: UploadFile = File(...)):
     try:
-        start_time = time.time()
+        start = time.time()
 
         contents = await file.read()
         npimg = np.frombuffer(contents, np.uint8)
         image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
         orig_shape = image.shape[:2]
-
         image_t = preprocess(image)
-        pred_mask = predict_mask(image_t)
+        mask = predict_mask(image_t)
 
-        area_pixels, area_ratio, area_cm2 = calculate_area(pred_mask, orig_shape)
-        inference_time_ms = round((time.time() - start_time) * 1000, 2)
+        pixels, ratio, area_cm2 = calculate_area(mask, orig_shape)
+        infer_ms = round((time.time() - start) * 1000, 2)
 
         return {
-            "model": "DeepLabV3+",
-            "area_count": int(area_pixels),
-            "area_ratio_percent": round(area_ratio, 2),
+            "area_count": pixels,
+            "area_ratio_percent": round(ratio, 2),
             "area_cm2_assumed": round(area_cm2, 2),
-            "inference_time_ms": inference_time_ms
+            "inference_time_ms": infer_ms
         }
 
     except Exception as e:
