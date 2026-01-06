@@ -1,32 +1,28 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
 from ultralytics import YOLO
-from PIL import Image
 import torch
 import numpy as np
 import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
-import io, time, traceback
+import io
+import time
+import traceback
 
 app = FastAPI(title="YOLO + DeepLabV3+ Unified API")
 
 # =========================================================
-# YOLO (lazy load, 단일 방식)
+# YOLO 모델 (전역 1회 로드, lazy ❌)
 # =========================================================
 YOLO_MODEL_PATH = "best2.pt"
-yolo_model = None
-
-def get_yolo():
-    global yolo_model
-    if yolo_model is None:
-        print("🚀 YOLO model loading...")
-        yolo_model = YOLO(YOLO_MODEL_PATH)
-    return yolo_model
+print("🚀 Loading YOLO model...")
+yolo_model = YOLO(YOLO_MODEL_PATH)
+print("✅ YOLO model loaded")
 
 # =========================================================
-# DeepLabV3+ (기존 그대로 OK)
+# DeepLabV3+ 모델
 # =========================================================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DLAB_MODEL_PATH = "best_dlab30.pth"
@@ -46,10 +42,15 @@ def load_dlab_model():
 dlab_model = load_dlab_model()
 print("✅ DeepLabV3+ model loaded")
 
+# =========================================================
+# DeepLab 전처리
+# =========================================================
 val_tf = A.Compose([
     A.Resize(512, 512),
-    A.Normalize(mean=(0.485, 0.456, 0.406),
-                std=(0.229, 0.224, 0.225)),
+    A.Normalize(
+        mean=(0.485, 0.456, 0.406),
+        std=(0.229, 0.224, 0.225)
+    ),
     ToTensorV2(),
 ])
 
@@ -62,60 +63,82 @@ def predict_mask(image_tensor):
         pred = dlab_model(image_tensor)
         return (torch.sigmoid(pred).squeeze().cpu().numpy() > 0.38).astype(np.uint8)
 
-def calculate_area(pred_mask, orig_shape):
-    h, w = orig_shape
-    mask = cv2.resize(pred_mask, (w, h), interpolation=cv2.INTER_NEAREST)
+def calculate_area(mask, shape):
+    h, w = shape
+    mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
     area_pixels = int(mask.sum())
     area_ratio = area_pixels / (h * w) * 100
     area_cm2 = area_pixels * 0.0001
     return area_pixels, area_ratio, area_cm2
 
 # =========================================================
-# YOLO /detect (🔥 여기만 보면 됨)
+# 상태 체크
+# =========================================================
+@app.get("/status")
+def status():
+    return {"status": "ok"}
+
+# =========================================================
+# YOLO /detect (🔥 핵심)
 # =========================================================
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
-    global is_busy
     try:
-        is_busy = True
-
-        # 1️⃣ 파일은 한 번만 읽기
+        # 1️⃣ 파일 읽기
         image_bytes = await file.read()
+        print("DEBUG file size:", len(image_bytes))
 
-        # 2️⃣ OpenCV로 디코딩 (YOLO는 이게 제일 안전)
+        if not image_bytes:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "빈 파일이 전송되었습니다"}
+            )
+
+        # 2️⃣ OpenCV 디코딩 (YOLO 최적)
         npimg = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
         if image is None:
-            raise ValueError("이미지 디코딩 실패")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "이미지 디코딩 실패"}
+            )
 
         # 3️⃣ BGR → RGB
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        # 4️⃣ YOLO 모델 가져오기 (lazy load)
-        yolo = get_yolo()
-
         start_time = time.time()
 
-        # 5️⃣ YOLO 추론 (이 형태만 사용)
-        results = yolo(image, conf=0.3, imgsz=640)
+        # 4️⃣ YOLO 추론 (이 방식만 사용)
+        results = yolo_model.predict(
+            source=image,
+            imgsz=640,
+            conf=0.3,
+            verbose=False
+        )
 
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
-        for box in results[0].boxes:
-            cls_id = int(box.cls[0])
-            conf = float(box.conf[0])
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
+        if results and results[0].boxes is not None:
+            for box in results[0].boxes:
+                cls_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
 
-            object_count += 1
-            predictions.append({
-                "class_id": cls_id,
-                "confidence": round(conf * 100, 2),
-                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
-            })
+                object_count += 1
+                predictions.append({
+                    "class_id": cls_id,
+                    "confidence": round(conf * 100, 2),
+                    "box": [
+                        round(x1, 2),
+                        round(y1, 2),
+                        round(x2, 2),
+                        round(y2, 2)
+                    ]
+                })
 
         return {
             "object_count": object_count,
@@ -127,24 +150,31 @@ async def detect_objects(file: UploadFile = File(...)):
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-    finally:
-        is_busy = False
-
 # =========================================================
-# DeepLab /segment (기존 유지)
+# DeepLab /segment
 # =========================================================
 @app.post("/segment")
 async def segment_area(file: UploadFile = File(...)):
     try:
         contents = await file.read()
+
         npimg = np.frombuffer(contents, np.uint8)
         image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+
+        if image is None:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "이미지 디코딩 실패"}
+            )
+
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         image_t = preprocess(image)
         mask = predict_mask(image_t)
 
-        area_pixels, area_ratio, area_cm2 = calculate_area(mask, image.shape[:2])
+        area_pixels, area_ratio, area_cm2 = calculate_area(
+            mask, image.shape[:2]
+        )
 
         return {
             "area_count": area_pixels,
