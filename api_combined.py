@@ -94,41 +94,42 @@ def calculate_area(pred_mask, orig_shape):
 async def detect_objects(file: UploadFile = File(...)):
     global is_busy
     try:
-        print(" /detect called")
         is_busy = True
 
+        # 1️⃣ 파일은 한 번만 읽기
         image_bytes = await file.read()
 
+        # 2️⃣ PIL로만 열기 (numpy / cv2 ❌)
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-        model = get_yolo()
-
         start_time = time.time()
-        results = model(
+
+        # 3️⃣ YOLO 호출 (이 방식만 허용)
+        results = yolo_model(
             image,
-            imgsz=416,      # 줄임
             conf=0.3,
+            imgsz=640,
             verbose=False
         )
+
         inference_time = round((time.time() - start_time) * 1000, 2)
 
         predictions = []
         object_count = 0
 
         for box in results[0].boxes:
+            cls_id = int(box.cls[0])
             conf = float(box.conf[0])
-            if conf < 0.3:
-                continue
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
 
             object_count += 1
             predictions.append({
-                "class_id": int(box.cls[0]),
+                "class_id": cls_id,
                 "confidence": round(conf * 100, 2),
-                "box": [round(x, 2) for x in box.xyxy[0].tolist()]
+                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
             })
 
         return {
-            "model": "YOLO",
             "object_count": object_count,
             "inference_time_ms": inference_time,
             "predictions": predictions
