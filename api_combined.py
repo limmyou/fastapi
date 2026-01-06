@@ -7,16 +7,15 @@ import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
-import io
-import time
-import traceback
+import io, time, traceback
 from PIL import Image
-
-
+# =========================================================
+# FastAPI
+# =========================================================
 app = FastAPI(title="YOLO + DeepLabV3+ Unified API")
 
 # =========================================================
-# YOLO 모델 (전역 1회 로드, lazy ❌)
+# YOLO (단일 로딩, predict만 사용)
 # =========================================================
 YOLO_MODEL_PATH = "best2.pt"
 print("🚀 Loading YOLO model...")
@@ -24,24 +23,20 @@ yolo_model = YOLO(YOLO_MODEL_PATH)
 print("✅ YOLO model loaded")
 
 # =========================================================
-# DeepLabV3+ 모델
+# DeepLabV3+
 # =========================================================
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DLAB_MODEL_PATH = "best_dlab30.pth"
 
-def load_dlab_model():
-    model = smp.DeepLabV3Plus(
-        encoder_name="resnet34",
-        encoder_weights="imagenet",
-        in_channels=3,
-        classes=1
-    )
-    model.load_state_dict(torch.load(DLAB_MODEL_PATH, map_location=DEVICE))
-    model.to(DEVICE)
-    model.eval()
-    return model
-
-dlab_model = load_dlab_model()
+dlab_model = smp.DeepLabV3Plus(
+    encoder_name="resnet34",
+    encoder_weights="imagenet",
+    in_channels=3,
+    classes=1
+)
+dlab_model.load_state_dict(torch.load(DLAB_MODEL_PATH, map_location=DEVICE))
+dlab_model.to(DEVICE)
+dlab_model.eval()
 print("✅ DeepLabV3+ model loaded")
 
 # =========================================================
@@ -49,10 +44,8 @@ print("✅ DeepLabV3+ model loaded")
 # =========================================================
 val_tf = A.Compose([
     A.Resize(512, 512),
-    A.Normalize(
-        mean=(0.485, 0.456, 0.406),
-        std=(0.229, 0.224, 0.225)
-    ),
+    A.Normalize(mean=(0.485, 0.456, 0.406),
+                std=(0.229, 0.224, 0.225)),
     ToTensorV2(),
 ])
 
@@ -74,32 +67,23 @@ def calculate_area(mask, shape):
     return area_pixels, area_ratio, area_cm2
 
 # =========================================================
-# 상태 체크
-# =========================================================
-@app.get("/status")
-def status():
-    return {"status": "ok"}
-
-# =========================================================
-# YOLO /detect (🔥 핵심)
+# YOLO /detect
 # =========================================================
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
-        print("DEBUG file size:", len(image_bytes))
 
-        if not image_bytes:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "빈 파일"}
-            )
+        # ✅ OpenCV로만 처리 (YOLO 최적)
+        npimg = np.frombuffer(image_bytes, np.uint8)
+        image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
 
-        # ✅ PIL ONLY (OpenCV 완전 제거)
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        if image is None:
+            raise ValueError("이미지 디코딩 실패")
 
-        start_time = time.time()
+        start = time.time()
 
+        # ✅ YOLO predict만 사용
         results = yolo_model.predict(
             source=image,
             imgsz=640,
@@ -107,33 +91,21 @@ async def detect_objects(file: UploadFile = File(...)):
             verbose=False
         )
 
-        inference_time = round((time.time() - start_time) * 1000, 2)
+        infer_ms = round((time.time() - start) * 1000, 2)
 
-        predictions = []
-        object_count = 0
-
-        if results and results[0].boxes is not None:
-            for box in results[0].boxes:
-                cls_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-                object_count += 1
-                predictions.append({
-                    "class_id": cls_id,
-                    "confidence": round(conf * 100, 2),
-                    "box": [
-                        round(x1, 2),
-                        round(y1, 2),
-                        round(x2, 2),
-                        round(y2, 2)
-                    ]
-                })
+        preds = []
+        for box in results[0].boxes:
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            preds.append({
+                "class_id": int(box.cls[0]),
+                "confidence": round(float(box.conf[0]) * 100, 2),
+                "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
+            })
 
         return {
-            "object_count": object_count,
-            "inference_time_ms": inference_time,
-            "predictions": predictions
+            "object_count": len(preds),
+            "inference_time_ms": infer_ms,
+            "predictions": preds
         }
 
     except Exception as e:
@@ -147,24 +119,14 @@ async def detect_objects(file: UploadFile = File(...)):
 async def segment_area(file: UploadFile = File(...)):
     try:
         contents = await file.read()
-
         npimg = np.frombuffer(contents, np.uint8)
         image = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-
-        if image is None:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "이미지 디코딩 실패"}
-            )
-
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         image_t = preprocess(image)
         mask = predict_mask(image_t)
 
-        area_pixels, area_ratio, area_cm2 = calculate_area(
-            mask, image.shape[:2]
-        )
+        area_pixels, area_ratio, area_cm2 = calculate_area(mask, image.shape[:2])
 
         return {
             "area_count": area_pixels,
