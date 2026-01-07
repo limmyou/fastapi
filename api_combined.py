@@ -27,32 +27,28 @@ def status():
 # =========================================================
 def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
-        raise ValueError("빈 파일입니다.")
+        raise ValueError("빈 파일")
 
-    # PIL로 이미지 읽기, RGB 모드로 변환
-    try:
-        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    except Exception as e:
-        raise ValueError(f"PIL 이미지 오픈 실패: {e}")
-
-    # numpy 배열로 변환 (uint8 타입으로 명시)
+    pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     rgb = np.array(pil_img, dtype=np.uint8)
 
-    # RGB 배열인지 확인
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"RGB shape 오류: {rgb.shape}")
 
-    # numpy 배열이 연속적인 메모리 공간을 가지도록 보장
     rgb = np.ascontiguousarray(rgb)
 
-    # OpenCV가 처리할 수 있도록 BGR로 변환
+    # bgr로 변환하기 전에 디버그 로그를 추가하여 데이터 형식을 확인합니다.
+    print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")  # 디버그 로그
+
     try:
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     except cv2.error as e:
         raise ValueError(f"cv2.cvtColor 오류: {e}")
-
-    # 연속적인 메모리 공간으로 다시 변환
+    
     bgr = np.ascontiguousarray(bgr)
+    
+    # 디버그 로그를 추가하여 bgr 형태 확인
+    print(f"DEBUG: BGR shape={bgr.shape}, dtype={bgr.dtype}")  # 디버그 로그
 
     return rgb, bgr
 
