@@ -42,10 +42,10 @@ def decode_upload_image(image_bytes: bytes):
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"RGB shape 오류: {rgb.shape}")
 
-    # OpenCV의 cvtColor가 잘 작동하려면 연속된 메모리에서 처리해야 하므로 강제 변환
+    # 강제적으로 연속된 메모리 배열로 변환
     rgb = np.ascontiguousarray(rgb)
 
-    # BGR로 변환 (OpenCV에서 처리할 수 있도록)
+    # OpenCV로 변환 (BGR)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     bgr = np.ascontiguousarray(bgr)
 
