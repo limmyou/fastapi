@@ -29,14 +29,32 @@ def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("빈 파일")
 
-    pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    try:
+        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        raise ValueError(f"PIL 이미지 오픈 실패: {e}")
+
+    # numpy 배열로 변환
     rgb = np.array(pil_img, dtype=np.uint8)
 
+    # RGB 배열이 잘 생성되었는지 확인
+    if rgb is None:
+        raise ValueError(f"RGB 배열이 None입니다.")
     if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"RGB shape 오류: {rgb.shape}")
+        raise ValueError(f"잘못된 RGB 배열: {rgb.shape} / {rgb.dtype}")
 
+    # OpenCV가 선호하는 형식으로 처리
     rgb = np.ascontiguousarray(rgb)
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+    # 디버깅: rgb 배열 상태 출력
+    print(f"DEBUG: RGB 배열 shape={rgb.shape}, dtype={rgb.dtype}")
+
+    # OpenCV BGR
+    try:
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    except cv2.error as e:
+        raise ValueError(f"cv2.cvtColor 오류: {e}")
+    
     bgr = np.ascontiguousarray(bgr)
 
     return rgb, bgr
