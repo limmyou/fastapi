@@ -29,25 +29,25 @@ def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("빈 파일")
 
-    # PIL로 이미지 읽기
+    # PIL 이미지 읽기
     pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
     # numpy 배열로 변환
     rgb = np.array(pil_img, dtype=np.uint8)
 
-    # RGB shape 확인 (디버그용)
+    # 디버그: RGB 배열 정보 확인
     print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")
 
-    # numpy 배열이 3D이고 채널 수가 3인지 확인
+    # RGB 배열이 3D 배열이고 채널 수가 3인지 확인
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"RGB shape 오류: {rgb.shape}")
 
-    # 강제적으로 연속된 메모리 배열로 변환
+    # OpenCV에서 처리 가능한 연속된 메모리 배열로 변환
     rgb = np.ascontiguousarray(rgb)
 
-    # OpenCV로 변환 (BGR)
+    # BGR로 변환
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    bgr = np.ascontiguousarray(bgr)
+    bgr = np.ascontiguousarray(bgr)  # OpenCV의 추가적인 요구 사항
 
     return rgb, bgr
 
