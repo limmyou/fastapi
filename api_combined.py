@@ -10,10 +10,13 @@ from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
 import io, time, traceback, asyncio
 
+# =========================================================
+# FastAPI
+# =========================================================
 app = FastAPI(title="YOLO + DeepLabV3+ Unified API")
 
 # =========================================================
-# Busy lock
+# Busy lock (동시 요청 방지)
 # =========================================================
 busy_lock = asyncio.Lock()
 is_busy = False
@@ -23,9 +26,9 @@ def status():
     return {"status": "busy" if is_busy else "idle"}
 
 # =========================================================
-# Upload → RGB/BGR decoder (절대 안전)
+# DeepLab 전용: 업로드 → RGB numpy
 # =========================================================
-def decode_upload_image(image_bytes: bytes):
+def decode_upload_image(image_bytes: bytes) -> np.ndarray:
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("업로드된 파일이 비어있거나 너무 작습니다.")
 
@@ -34,26 +37,15 @@ def decode_upload_image(image_bytes: bytes):
     except Exception as e:
         raise ValueError(f"PIL 이미지 오픈 실패: {e}")
 
-    # 🔥 핵심 수정 포인트
     rgb = np.array(pil_img, dtype=np.uint8, copy=True)
-
-    if not isinstance(rgb, np.ndarray):
-        raise ValueError("RGB 변환 실패: numpy array 아님")
 
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"RGB shape 오류: {rgb.shape}")
 
-    # OpenCV가 좋아하는 연속 메모리
-    rgb = np.ascontiguousarray(rgb)
-
-    # OpenCV BGR
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    bgr = np.ascontiguousarray(bgr)
-
-    return rgb, bgr
+    return np.ascontiguousarray(rgb)
 
 # =========================================================
-# YOLO lazy load
+# YOLO (PIL 전용, 절대 numpy/cv2 금지)
 # =========================================================
 YOLO_MODEL_PATH = "best2.pt"
 _yolo = None
@@ -95,17 +87,17 @@ val_tf = A.Compose([
     ToTensorV2(),
 ])
 
-def preprocess(rgb):
+def preprocess(rgb: np.ndarray):
     aug = val_tf(image=rgb)
     return aug["image"].unsqueeze(0).to(DEVICE)
 
-def predict_mask(t):
+def predict_mask(tensor):
     with torch.no_grad():
-        p = torch.sigmoid(dlab_model(t)).squeeze().cpu().numpy()
+        p = torch.sigmoid(dlab_model(tensor)).squeeze().cpu().numpy()
         return (p > 0.38).astype(np.uint8)
 
 # =========================================================
-# YOLO /detect
+# YOLO /detect (🔥 PIL만 사용)
 # =========================================================
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
@@ -115,29 +107,26 @@ async def detect_objects(file: UploadFile = File(...)):
             is_busy = True
 
             image_bytes = await file.read()
-            rgb, bgr = decode_upload_image(image_bytes)
 
-            print(
-                f"DEBUG upload={file.filename} "
-                f"bgr.shape={bgr.shape} dtype={bgr.dtype}"
-            )
+            # ✅ YOLO는 PIL Image 그대로
+            pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
             yolo = get_yolo()
 
             start = time.time()
             results = yolo.predict(
-                source=bgr,     # ⭐⭐⭐ 핵심 수정 ⭐⭐⭐
+                source=pil_img,
                 imgsz=640,
                 conf=0.3,
                 verbose=False
             )
             infer_ms = round((time.time() - start) * 1000, 2)
 
-            preds = []
+            predictions = []
             if results and results[0].boxes is not None:
                 for b in results[0].boxes:
                     x1, y1, x2, y2 = b.xyxy[0].tolist()
-                    preds.append({
+                    predictions.append({
                         "class_id": int(b.cls[0]),
                         "confidence": round(float(b.conf[0]) * 100, 2),
                         "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
@@ -145,9 +134,9 @@ async def detect_objects(file: UploadFile = File(...)):
 
             return {
                 "filename": file.filename,
-                "object_count": len(preds),
+                "object_count": len(predictions),
                 "inference_time_ms": infer_ms,
-                "predictions": preds
+                "predictions": predictions
             }
 
         except Exception as e:
@@ -158,16 +147,16 @@ async def detect_objects(file: UploadFile = File(...)):
             is_busy = False
 
 # =========================================================
-# DeepLab /segment
+# DeepLab /segment (numpy + cv2)
 # =========================================================
 @app.post("/segment")
 async def segment_area(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
-        rgb, _ = decode_upload_image(image_bytes)
+        rgb = decode_upload_image(image_bytes)
 
-        t = preprocess(rgb)
-        mask = predict_mask(t)
+        tensor = preprocess(rgb)
+        mask = predict_mask(tensor)
 
         h, w = rgb.shape[:2]
         mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
