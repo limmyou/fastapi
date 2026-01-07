@@ -35,17 +35,17 @@ def decode_upload_image(image_bytes: bytes):
     # numpy 배열로 변환
     rgb = np.array(pil_img, dtype=np.uint8)
 
-    # RGB shape 확인 (디버그)
+    # RGB shape 확인 (디버그용)
     print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")
 
-    # 크기나 채널이 잘못된 경우 예외 처리
+    # numpy 배열이 3D이고 채널 수가 3인지 확인
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"RGB shape 오류: {rgb.shape}")
 
-    # OpenCV의 cvtColor가 잘 작동하려면 연속된 메모리에서 처리해야 함
+    # OpenCV의 cvtColor가 잘 작동하려면 연속된 메모리에서 처리해야 하므로 강제 변환
     rgb = np.ascontiguousarray(rgb)
 
-    # BGR로 변환
+    # BGR로 변환 (OpenCV에서 처리할 수 있도록)
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     bgr = np.ascontiguousarray(bgr)
 
