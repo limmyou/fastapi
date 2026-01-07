@@ -30,7 +30,6 @@ def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("업로드된 파일이 비어있거나 너무 작습니다.")
 
-    # 1) PIL로 먼저 열어서 "진짜 이미지"인지 확인 + RGB로 통일
     try:
         pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception as e:
@@ -38,20 +37,16 @@ def decode_upload_image(image_bytes: bytes):
 
     rgb = np.array(pil_img, dtype=np.uint8)
 
-    # 혹시라도 이상한 dtype/shape이면 여기서 컷
-    if rgb is None or not isinstance(rgb, np.ndarray):
-        raise ValueError("RGB 변환 실패: numpy array가 아닙니다.")
+    if not isinstance(rgb, np.ndarray):
+        raise ValueError("RGB 변환 실패: numpy array 아님")
     if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"RGB shape 이상: shape={getattr(rgb, 'shape', None)}")
-    if rgb.dtype != np.uint8:
-        rgb = rgb.astype(np.uint8, copy=False)
+        raise ValueError(f"RGB shape 이상: {rgb.shape}")
 
-    # OpenCV가 좋아하는 contiguous 보장
+    # contiguous 보장
     rgb = np.ascontiguousarray(rgb)
 
-    # 2) YOLO/OPENCV용 BGR
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    bgr = np.ascontiguousarray(bgr)
+    # ✅ OpenCV 사용 금지 → numpy slicing
+    bgr = rgb[:, :, ::-1].copy()
 
     return rgb, bgr
 
