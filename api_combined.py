@@ -29,28 +29,26 @@ def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("빈 파일")
 
-    pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    rgb = np.array(pil_img, dtype=np.uint8)
-
-    if rgb is None:
-        raise ValueError("이미지 배열 변환 실패: numpy 배열이 아닙니다.")
-
-    if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"RGB shape 오류: {rgb.shape}")
-
-    rgb = np.ascontiguousarray(rgb)
-
-    # 여기서 'rgb'가 None인지 확인하는 디버깅 추가
-    print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")
-
     try:
+        # Convert image bytes to a PIL image
+        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # Convert to numpy array
+        rgb = np.array(pil_img, dtype=np.uint8)
+
+        # Debugging: Check the shape and type of the loaded image
+        print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")
+
+        # Ensure the numpy array has 3 channels (RGB)
+        if rgb.ndim != 3 or rgb.shape[2] != 3:
+            raise ValueError(f"Invalid RGB shape: {rgb.shape}")
+
+        # Convert RGB to BGR for OpenCV processing
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        bgr = np.ascontiguousarray(bgr)
+        return rgb, bgr
+
     except Exception as e:
         raise ValueError(f"cv2.cvtColor 오류: {e}")
-
-    bgr = np.ascontiguousarray(bgr)
-
-    return rgb, bgr
 
 # =========================================================
 # YOLO
