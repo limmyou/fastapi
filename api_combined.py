@@ -81,26 +81,29 @@ def predict_mask(t):
 async def detect_objects(file: UploadFile = File(...)):
     global is_busy
     async with busy_lock:
-        tmp_path = None
         try:
             is_busy = True
 
             image_bytes = await file.read()
+            rgb, bgr = decode_upload_image(image_bytes)
 
-            # 1️⃣ 임시 파일로 저장
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
-                tmp.write(image_bytes)
-                tmp_path = tmp.name
+            print(
+                f"DEBUG upload={file.filename} "
+                f"bgr.shape={bgr.shape} dtype={bgr.dtype}"
+            )
 
             yolo = get_yolo()
 
             start = time.time()
-            results = yolo.predict(
-                source=tmp_path,   # 🔥 핵심: 파일 경로
+
+            # ✅ 핵심: predict() ❌ / __call__() ⭕
+            results = yolo(
+                bgr,
                 imgsz=640,
                 conf=0.3,
                 verbose=False
             )
+
             infer_ms = round((time.time() - start) * 1000, 2)
 
             preds = []
@@ -126,8 +129,6 @@ async def detect_objects(file: UploadFile = File(...)):
 
         finally:
             is_busy = False
-            if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
 
 # =========================================================
 # DeepLab /segment (기존 방식 OK)
