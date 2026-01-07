@@ -29,27 +29,24 @@ def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("빈 파일")
 
-    try:
-        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    except Exception as e:
-        raise ValueError(f"PIL 이미지 오픈 실패: {e}")
+    # PIL로 이미지 읽기
+    pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    # 제대로 디코딩 되었는지 확인하기 위한 디버그 출력
-    print(f"DEBUG: RGB 배열 shape={np.array(pil_img).shape}, dtype={np.array(pil_img).dtype}")
-
-    # numpy 배열로 변환 (np.ascontiguousarray()로 메모리 정렬 보장)
+    # numpy 배열로 변환
     rgb = np.array(pil_img, dtype=np.uint8)
 
+    # RGB shape 확인 (디버그)
+    print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")
+
+    # 크기나 채널이 잘못된 경우 예외 처리
     if rgb.ndim != 3 or rgb.shape[2] != 3:
         raise ValueError(f"RGB shape 오류: {rgb.shape}")
 
+    # OpenCV의 cvtColor가 잘 작동하려면 연속된 메모리에서 처리해야 함
     rgb = np.ascontiguousarray(rgb)
 
-    try:
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    except cv2.error as e:
-        raise ValueError(f"cv2.cvtColor 오류: {e}")
-
+    # BGR로 변환
+    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     bgr = np.ascontiguousarray(bgr)
 
     return rgb, bgr
