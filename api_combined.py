@@ -46,7 +46,11 @@ def decode_upload_image(image_bytes: bytes):
     rgb = np.ascontiguousarray(rgb)
 
     # BGR로 변환
-    bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    try:
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        raise ValueError(f"cv2.cvtColor 오류: {e}")
+    
     bgr = np.ascontiguousarray(bgr)  # OpenCV의 추가적인 요구 사항
 
     return rgb, bgr
