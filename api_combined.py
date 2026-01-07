@@ -26,13 +26,27 @@ def status():
 # Upload → RGB/BGR decoder (절대 안전)
 # =========================================================
 def decode_upload_image(image_bytes: bytes):
-    if not image_bytes:
-        raise ValueError("빈 파일")
+    if not image_bytes or len(image_bytes) < 10:
+        raise ValueError("업로드된 파일이 비어있거나 너무 작습니다.")
 
-    pil = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    rgb = np.asarray(pil, dtype=np.uint8)
+    try:
+        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        raise ValueError(f"PIL 이미지 오픈 실패: {e}")
+
+    # 🔥 핵심 수정 포인트
+    rgb = np.array(pil_img, dtype=np.uint8, copy=True)
+
+    if not isinstance(rgb, np.ndarray):
+        raise ValueError("RGB 변환 실패: numpy array 아님")
+
+    if rgb.ndim != 3 or rgb.shape[2] != 3:
+        raise ValueError(f"RGB shape 오류: {rgb.shape}")
+
+    # OpenCV가 좋아하는 연속 메모리
     rgb = np.ascontiguousarray(rgb)
 
+    # OpenCV BGR
     bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     bgr = np.ascontiguousarray(bgr)
 
