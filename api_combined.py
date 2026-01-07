@@ -29,7 +29,15 @@ def decode_upload_image(image_bytes: bytes):
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("빈 파일")
 
-    pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    try:
+        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as e:
+        raise ValueError(f"PIL 이미지 오픈 실패: {e}")
+
+    # 제대로 디코딩 되었는지 확인하기 위한 디버그 출력
+    print(f"DEBUG: RGB 배열 shape={np.array(pil_img).shape}, dtype={np.array(pil_img).dtype}")
+
+    # numpy 배열로 변환 (np.ascontiguousarray()로 메모리 정렬 보장)
     rgb = np.array(pil_img, dtype=np.uint8)
 
     if rgb.ndim != 3 or rgb.shape[2] != 3:
@@ -37,18 +45,12 @@ def decode_upload_image(image_bytes: bytes):
 
     rgb = np.ascontiguousarray(rgb)
 
-    # bgr로 변환하기 전에 디버그 로그를 추가하여 데이터 형식을 확인합니다.
-    print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")  # 디버그 로그
-
     try:
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
     except cv2.error as e:
         raise ValueError(f"cv2.cvtColor 오류: {e}")
-    
+
     bgr = np.ascontiguousarray(bgr)
-    
-    # 디버그 로그를 추가하여 bgr 형태 확인
-    print(f"DEBUG: BGR shape={bgr.shape}, dtype={bgr.dtype}")  # 디버그 로그
 
     return rgb, bgr
 
