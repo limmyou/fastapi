@@ -126,10 +126,9 @@ async def detect_objects(file: UploadFile = File(...)):
 
             start = time.time()
             results = yolo.predict(
-                source=[bgr],     # ⭐⭐⭐ 핵심 수정 ⭐⭐⭐
+                source=bgr,     # ⭐⭐⭐ 핵심 수정 ⭐⭐⭐
                 imgsz=640,
                 conf=0.3,
-                stream=False,
                 verbose=False
             )
             infer_ms = round((time.time() - start) * 1000, 2)
