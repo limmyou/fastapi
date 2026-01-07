@@ -8,15 +8,12 @@ import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import segmentation_models_pytorch as smp
-import io, time, traceback, asyncio
+import io, time, traceback, asyncio, tempfile, os
 
-# =========================================================
-# FastAPI
-# =========================================================
 app = FastAPI(title="YOLO + DeepLabV3+ Unified API")
 
 # =========================================================
-# Busy lock (동시 요청 방지)
+# Busy lock
 # =========================================================
 busy_lock = asyncio.Lock()
 is_busy = False
@@ -26,26 +23,7 @@ def status():
     return {"status": "busy" if is_busy else "idle"}
 
 # =========================================================
-# DeepLab 전용: 업로드 → RGB numpy
-# =========================================================
-def decode_upload_image(image_bytes: bytes) -> np.ndarray:
-    if not image_bytes or len(image_bytes) < 10:
-        raise ValueError("업로드된 파일이 비어있거나 너무 작습니다.")
-
-    try:
-        pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    except Exception as e:
-        raise ValueError(f"PIL 이미지 오픈 실패: {e}")
-
-    rgb = np.array(pil_img, dtype=np.uint8, copy=True)
-
-    if rgb.ndim != 3 or rgb.shape[2] != 3:
-        raise ValueError(f"RGB shape 오류: {rgb.shape}")
-
-    return np.ascontiguousarray(rgb)
-
-# =========================================================
-# YOLO (PIL 전용, 절대 numpy/cv2 금지)
+# YOLO lazy load
 # =========================================================
 YOLO_MODEL_PATH = "best2.pt"
 _yolo = None
@@ -87,46 +65,49 @@ val_tf = A.Compose([
     ToTensorV2(),
 ])
 
-def preprocess(rgb: np.ndarray):
+def preprocess(rgb):
     aug = val_tf(image=rgb)
     return aug["image"].unsqueeze(0).to(DEVICE)
 
-def predict_mask(tensor):
+def predict_mask(t):
     with torch.no_grad():
-        p = torch.sigmoid(dlab_model(tensor)).squeeze().cpu().numpy()
+        p = torch.sigmoid(dlab_model(t)).squeeze().cpu().numpy()
         return (p > 0.38).astype(np.uint8)
 
 # =========================================================
-# YOLO /detect (🔥 PIL만 사용)
+# YOLO /detect  ✅ 안정 버전
 # =========================================================
 @app.post("/detect")
 async def detect_objects(file: UploadFile = File(...)):
     global is_busy
     async with busy_lock:
+        tmp_path = None
         try:
             is_busy = True
 
             image_bytes = await file.read()
 
-            # ✅ YOLO는 PIL Image 그대로
-            pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            # 1️⃣ 임시 파일로 저장
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                tmp.write(image_bytes)
+                tmp_path = tmp.name
 
             yolo = get_yolo()
 
             start = time.time()
             results = yolo.predict(
-                source=pil_img,
+                source=tmp_path,   # 🔥 핵심: 파일 경로
                 imgsz=640,
                 conf=0.3,
                 verbose=False
             )
             infer_ms = round((time.time() - start) * 1000, 2)
 
-            predictions = []
+            preds = []
             if results and results[0].boxes is not None:
                 for b in results[0].boxes:
                     x1, y1, x2, y2 = b.xyxy[0].tolist()
-                    predictions.append({
+                    preds.append({
                         "class_id": int(b.cls[0]),
                         "confidence": round(float(b.conf[0]) * 100, 2),
                         "box": [round(x1,2), round(y1,2), round(x2,2), round(y2,2)]
@@ -134,9 +115,9 @@ async def detect_objects(file: UploadFile = File(...)):
 
             return {
                 "filename": file.filename,
-                "object_count": len(predictions),
+                "object_count": len(preds),
                 "inference_time_ms": infer_ms,
-                "predictions": predictions
+                "predictions": preds
             }
 
         except Exception as e:
@@ -145,18 +126,20 @@ async def detect_objects(file: UploadFile = File(...)):
 
         finally:
             is_busy = False
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
 # =========================================================
-# DeepLab /segment (numpy + cv2)
+# DeepLab /segment (기존 방식 OK)
 # =========================================================
 @app.post("/segment")
 async def segment_area(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
-        rgb = decode_upload_image(image_bytes)
+        rgb = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
 
-        tensor = preprocess(rgb)
-        mask = predict_mask(tensor)
+        t = preprocess(rgb)
+        mask = predict_mask(t)
 
         h, w = rgb.shape[:2]
         mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
