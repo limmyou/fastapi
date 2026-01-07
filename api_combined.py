@@ -30,19 +30,19 @@ def decode_upload_image(image_bytes: bytes):
         raise ValueError("빈 파일")
 
     try:
-        # Convert image bytes to a PIL image
+        # 이미지 파일을 PIL 형식으로 변환
         pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        # Convert to numpy array
+        # PIL 이미지를 numpy 배열로 변환
         rgb = np.array(pil_img, dtype=np.uint8)
 
-        # Debugging: Check the shape and type of the loaded image
-        print(f"DEBUG: RGB shape={rgb.shape}, dtype={rgb.dtype}")
+        # 디버깅: 이미지 shape와 타입 확인
+        print(f"DEBUG: RGB 배열 shape={rgb.shape}, dtype={rgb.dtype}")
 
-        # Ensure the numpy array has 3 channels (RGB)
+        # numpy 배열이 3채널 (RGB)인지 확인
         if rgb.ndim != 3 or rgb.shape[2] != 3:
             raise ValueError(f"Invalid RGB shape: {rgb.shape}")
 
-        # Convert RGB to BGR for OpenCV processing
+        # OpenCV에서 사용할 수 있도록 RGB -> BGR로 변환
         bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         bgr = np.ascontiguousarray(bgr)
         return rgb, bgr
